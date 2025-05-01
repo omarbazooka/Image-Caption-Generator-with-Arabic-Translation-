@@ -1,5 +1,4 @@
-transformers==4.28.0
-torch==2.1.0
-Pillow==9.3.0
-tkinter==8.6 (موجود بشكل افتراضي في بايثون)
-nltk==3.7
+transformers==4.51.3
+torch==2.7.0
+Pillow==11.2.1
+nltk==3.9.1
