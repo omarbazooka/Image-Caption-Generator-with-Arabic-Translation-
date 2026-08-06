@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Generate an English image caption with BLIP and translate it to Arabic with MarianMT." />
+  <title>CaptionBridge AI | Image Caption Generator</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="#top" aria-label="CaptionBridge AI home">
+        <span class="brand-mark">C</span>
+        <span>CaptionBridge <b>AI</b></span>
+      </a>
+      <nav class="nav-links" aria-label="Main navigation">
+        <a href="#demo">Demo</a>
+        <a href="#workflow">How it works</a>
+        <a href="https://github.com/omarbazooka/Image-Caption-Generator-with-Arabic-Translation-" target="_blank" rel="noreferrer">GitHub ↗</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow">Computer Vision × NLP</span>
+          <h1>Turn any image into a <span>bilingual description.</span></h1>
+          <p class="hero-text">
+            Upload an image, generate an English caption with BLIP, then translate it into Arabic using MarianMT.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#demo">Try the demo</a>
+            <a class="button ghost" href="#workflow">See the pipeline</a>
+          </div>
+          <div class="model-row" aria-label="Models used">
+            <div><small>Captioning</small><strong>BLIP</strong></div>
+            <span class="model-arrow">→</span>
+            <div><small>Translation</small><strong>MarianMT</strong></div>
+          </div>
+        </div>
+
+        <div class="hero-card" aria-hidden="true">
+          <div class="visual-topbar"><span></span><span></span><span></span></div>
+          <div class="visual-image">
+            <div class="mountain mountain-one"></div>
+            <div class="mountain mountain-two"></div>
+            <div class="sun"></div>
+          </div>
+          <div class="visual-caption">
+            <span>AI description</span>
+            <strong>A scenic mountain landscape under a clear sky.</strong>
+          </div>
+          <div class="visual-translation" lang="ar" dir="rtl">
+            منظر جبلي خلاب تحت سماء صافية.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="demo" class="section demo-section">
+      <div class="container">
+        <div class="section-heading">
+          <span class="eyebrow">Live inference</span>
+          <h2>Upload an image</h2>
+          <p>The first request can take longer while the pretrained models are downloaded and loaded into memory.</p>
+        </div>
+
+        <div class="demo-grid">
+          <section class="panel upload-panel">
+            <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-label="Choose an image">
+              <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+              <div id="emptyUpload" class="upload-empty">
+                <div class="upload-icon">↑</div>
+                <h3>Drop your image here</h3>
+                <p>or click to browse</p>
+                <span>JPG, PNG or WebP · up to 8 MB</span>
+              </div>
+              <div id="previewWrap" class="preview-wrap hidden">
+                <img id="previewImage" alt="Selected image preview" />
+                <div class="preview-overlay">
+                  <span id="fileName"></span>
+                  <button id="changeImage" class="small-button" type="button">Change image</button>
+                </div>
+              </div>
+            </div>
+
+            <button id="generateButton" class="button primary generate-button" type="button" disabled>
+              <span id="buttonText">Generate caption</span>
+              <span id="spinner" class="spinner hidden" aria-hidden="true"></span>
+            </button>
+            <p id="statusMessage" class="status-message" aria-live="polite"></p>
+          </section>
+
+          <section class="panel results-panel" aria-live="polite">
+            <div class="results-head">
+              <div>
+                <span class="eyebrow">AI output</span>
+                <h3>Generated captions</h3>
+              </div>
+              <span id="resultState" class="state-pill">Waiting for image</span>
+            </div>
+
+            <article class="result-card">
+              <div class="result-label-row">
+                <span>English caption</span>
+                <button class="copy-button" type="button" data-copy="englishResult" disabled>Copy</button>
+              </div>
+              <p id="englishResult" class="result-text placeholder">Your generated English caption will appear here.</p>
+            </article>
+
+            <article class="result-card arabic-card">
+              <div class="result-label-row">
+                <span>Arabic translation</span>
+                <button class="copy-button" type="button" data-copy="arabicResult" disabled>Copy</button>
+              </div>
+              <p id="arabicResult" class="result-text arabic-text placeholder" lang="ar" dir="rtl">ستظهر الترجمة العربية هنا.</p>
+            </article>
+
+            <div class="model-note">
+              <span class="note-dot"></span>
+              <p><strong>Real model inference:</strong> results come directly from BLIP and MarianMT running on the Python backend.</p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section id="workflow" class="section workflow-section">
+      <div class="container">
+        <div class="section-heading centered">
+          <span class="eyebrow">Project pipeline</span>
+          <h2>Two AI models, one simple flow</h2>
+          <p>The interface stays lightweight while the original machine-learning pipeline remains unchanged.</p>
+        </div>
+
+        <div class="workflow-grid">
+          <article class="workflow-card">
+            <span class="step-number">01</span>
+            <div class="step-icon">IMG</div>
+            <h3>Image input</h3>
+            <p>The uploaded image is validated and converted to RGB before inference.</p>
+          </article>
+          <article class="workflow-card">
+            <span class="step-number">02</span>
+            <div class="step-icon">BLIP</div>
+            <h3>Caption generation</h3>
+            <p>Salesforce BLIP analyzes the visual content and generates an English caption.</p>
+          </article>
+          <article class="workflow-card">
+            <span class="step-number">03</span>
+            <div class="step-icon">AR</div>
+            <h3>Arabic translation</h3>
+            <p>MarianMT translates the generated English sentence into Arabic.</p>
+          </article>
+          <article class="workflow-card">
+            <span class="step-number">04</span>
+            <div class="step-icon">UI</div>
+            <h3>Bilingual result</h3>
+            <p>The frontend displays both captions side by side in a presentation-friendly layout.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="project-section">
+      <div class="container project-card">
+        <div>
+          <span class="eyebrow light-eyebrow">Open source project</span>
+          <h2>Explore the implementation on GitHub.</h2>
+          <p>FastAPI backend · Vanilla frontend · PyTorch · Hugging Face Transformers</p>
+        </div>
+        <a class="button light-button" href="https://github.com/omarbazooka/Image-Caption-Generator-with-Arabic-Translation-" target="_blank" rel="noreferrer">View repository ↗</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <a class="brand" href="#top"><span class="brand-mark">C</span><span>CaptionBridge <b>AI</b></span></a>
+      <p>Image Caption Generator with Arabic Translation</p>
+    </div>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

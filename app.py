@@ -1,8 +1,14 @@
-import io
+from __future__ import annotations
 
-import streamlit as st
+import io
+import threading
+from pathlib import Path
+
 import torch
-from PIL import Image
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from PIL import Image, UnidentifiedImageError
 from transformers import (
     BlipForConditionalGeneration,
     BlipProcessor,
@@ -12,179 +18,130 @@ from transformers import (
 
 CAPTION_MODEL = "Salesforce/blip-image-captioning-base"
 TRANSLATION_MODEL = "Helsinki-NLP/opus-mt-tc-big-en-ar"
+MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
-st.set_page_config(
-    page_title="Image Caption AI",
-    page_icon="🖼️",
-    layout="centered",
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+
+app = FastAPI(
+    title="Image Caption Generator API",
+    description="Generate an English image caption with BLIP and translate it to Arabic with MarianMT.",
+    version="2.0.0",
 )
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-st.markdown(
-    """
-    <style>
-        .block-container {
-            max-width: 900px;
-            padding-top: 2.5rem;
-            padding-bottom: 3rem;
-        }
-        .hero {
-            text-align: center;
-            margin-bottom: 1.5rem;
-        }
-        .hero h1 {
-            margin-bottom: 0.35rem;
-        }
-        .hero p {
-            color: #6b7280;
-            font-size: 1.05rem;
-        }
-        .result-card {
-            border: 1px solid rgba(128, 128, 128, 0.25);
-            border-radius: 14px;
-            padding: 1rem 1.1rem;
-            min-height: 150px;
-            background: rgba(128, 128, 128, 0.05);
-        }
-        .result-label {
-            font-size: 0.82rem;
-            font-weight: 700;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            opacity: 0.7;
-            margin-bottom: 0.55rem;
-        }
-        .result-text {
-            font-size: 1.05rem;
-            line-height: 1.7;
-        }
-        .arabic-text {
-            direction: rtl;
-            text-align: right;
-            font-size: 1.12rem;
-        }
-        .model-badges {
-            text-align: center;
-            color: #6b7280;
-            font-size: 0.85rem;
-            margin-top: 0.7rem;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+_models = None
+_model_lock = threading.Lock()
 
 
-@st.cache_resource(show_spinner=False)
 def load_models():
-    caption_processor = BlipProcessor.from_pretrained(CAPTION_MODEL)
-    caption_model = BlipForConditionalGeneration.from_pretrained(CAPTION_MODEL)
-    translation_tokenizer = MarianTokenizer.from_pretrained(TRANSLATION_MODEL)
-    translation_model = MarianMTModel.from_pretrained(TRANSLATION_MODEL)
+    """Load the pretrained models once and reuse them for later requests."""
+    global _models
 
-    caption_model.eval()
-    translation_model.eval()
+    if _models is None:
+        with _model_lock:
+            if _models is None:
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    return (
-        caption_processor,
-        caption_model,
-        translation_tokenizer,
-        translation_model,
-    )
+                caption_processor = BlipProcessor.from_pretrained(CAPTION_MODEL)
+                caption_model = BlipForConditionalGeneration.from_pretrained(CAPTION_MODEL)
+                translation_tokenizer = MarianTokenizer.from_pretrained(TRANSLATION_MODEL)
+                translation_model = MarianMTModel.from_pretrained(TRANSLATION_MODEL)
+
+                caption_model.to(device).eval()
+                translation_model.to(device).eval()
+
+                _models = (
+                    caption_processor,
+                    caption_model,
+                    translation_tokenizer,
+                    translation_model,
+                    device,
+                )
+
+    return _models
 
 
-def generate_caption(image: Image.Image, processor, model) -> str:
+def generate_caption(image: Image.Image, processor, model, device: torch.device) -> str:
     inputs = processor(images=image.convert("RGB"), return_tensors="pt")
+    inputs = {key: value.to(device) for key, value in inputs.items()}
+
     with torch.inference_mode():
         output = model.generate(**inputs, max_new_tokens=40)
+
     return processor.decode(output[0], skip_special_tokens=True).strip()
 
 
-def translate_to_arabic(text: str, tokenizer, model) -> str:
+def translate_to_arabic(
+    text: str,
+    tokenizer,
+    model,
+    device: torch.device,
+) -> str:
     inputs = tokenizer([text], return_tensors="pt", padding=True, truncation=True)
+    inputs = {key: value.to(device) for key, value in inputs.items()}
+
     with torch.inference_mode():
         translated = model.generate(**inputs, max_new_tokens=80)
+
     return tokenizer.decode(translated[0], skip_special_tokens=True).strip()
 
 
-st.markdown(
-    """
-    <div class="hero">
-        <h1>🖼️ Image Caption AI</h1>
-        <p>Upload an image and let AI describe it in English, then translate the caption into Arabic.</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+@app.get("/", include_in_schema=False)
+def home():
+    return FileResponse(STATIC_DIR / "index.html")
 
-uploaded_file = st.file_uploader(
-    "Upload an image",
-    type=["jpg", "jpeg", "png", "webp"],
-    help="Supported formats: JPG, PNG and WebP.",
-)
 
-if uploaded_file is None:
-    st.info("Upload an image to start the demo.", icon="👆")
-else:
-    image_bytes = uploaded_file.getvalue()
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+@app.get("/api/health")
+def health():
+    return {
+        "status": "ok",
+        "models_loaded": _models is not None,
+        "caption_model": CAPTION_MODEL,
+        "translation_model": TRANSLATION_MODEL,
+    }
 
-    st.image(image, caption=uploaded_file.name, use_container_width=True)
 
-    if st.button("✨ Generate Caption", type="primary", use_container_width=True):
-        try:
-            with st.spinner("Loading AI models and analyzing the image..."):
-                processor, caption_model, tokenizer, translation_model = load_models()
-                caption = generate_caption(image, processor, caption_model)
-                arabic_caption = translate_to_arabic(
-                    caption, tokenizer, translation_model
-                )
+@app.post("/api/caption")
+async def caption_image(image: UploadFile = File(...)):
+    if image.content_type not in ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail="Unsupported image type. Please upload JPG, PNG, or WebP.",
+        )
 
-            st.success("Caption generated successfully.")
-            left, right = st.columns(2, gap="medium")
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+    if len(image_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Image must be 8 MB or smaller.")
 
-            with left:
-                st.markdown(
-                    f"""
-                    <div class="result-card">
-                        <div class="result-label">English Caption</div>
-                        <div class="result-text">{caption}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+    try:
+        source_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise HTTPException(status_code=400, detail="The uploaded file is not a valid image.") from exc
 
-            with right:
-                st.markdown(
-                    f"""
-                    <div class="result-card">
-                        <div class="result-label">Arabic Translation</div>
-                        <div class="result-text arabic-text">{arabic_caption}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-        except Exception as exc:
-            st.error(
-                "The demo could not process this image. "
-                "Check your internet connection on the first run and try again."
-            )
-            with st.expander("Technical details"):
-                st.code(str(exc))
+    try:
+        processor, caption_model, tokenizer, translation_model, device = load_models()
+        english_caption = generate_caption(source_image, processor, caption_model, device)
+        arabic_caption = translate_to_arabic(
+            english_caption,
+            tokenizer,
+            translation_model,
+            device,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="The AI models could not process this image. Please try again.",
+        ) from exc
 
-with st.expander("How it works"):
-    st.markdown(
-        """
-        1. **BLIP** analyzes the uploaded image and generates an English caption.
-        2. **MarianMT** translates the generated caption from English to Arabic.
-        3. Both pretrained models are downloaded from Hugging Face on the first run and cached afterwards.
-        """
-    )
-
-st.markdown(
-    f"""
-    <div class="model-badges">
-        Captioning: <b>{CAPTION_MODEL}</b> &nbsp;•&nbsp; Translation: <b>{TRANSLATION_MODEL}</b>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+    return {
+        "english_caption": english_caption,
+        "arabic_caption": arabic_caption,
+        "models": {
+            "captioning": CAPTION_MODEL,
+            "translation": TRANSLATION_MODEL,
+        },
+    }
