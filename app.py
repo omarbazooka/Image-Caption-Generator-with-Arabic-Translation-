@@ -3,6 +3,7 @@ from __future__ import annotations
 import gc
 import io
 import logging
+import os
 import threading
 from pathlib import Path
 
@@ -22,6 +23,7 @@ CAPTION_MODEL = "Salesforce/blip-image-captioning-base"
 TRANSLATION_MODEL = "Helsinki-NLP/opus-mt-tc-big-en-ar"
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
+BROWSER_INFERENCE_ONLY = os.getenv("BROWSER_INFERENCE_ONLY", "0") == "1"
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -30,13 +32,12 @@ LOGGER = logging.getLogger("image-caption-api")
 app = FastAPI(
     title="Image Caption Generator API",
     description="Generate an English image caption with BLIP and translate it to Arabic with MarianMT.",
-    version="2.1.0",
+    version="2.2.0",
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Running both transformer models at the same time creates a large memory spike.
-# Serialize inference and load one model at a time so paid CPU instances can use
-# the smallest practical amount of RAM.
+# Serialize inference and load one model at a time for server-side deployments.
 _inference_lock = threading.Lock()
 
 
@@ -91,6 +92,7 @@ def home():
 def health():
     return {
         "status": "ok",
+        "inference_mode": "browser" if BROWSER_INFERENCE_ONLY else "server",
         "loading_strategy": "sequential",
         "caption_model": CAPTION_MODEL,
         "translation_model": TRANSLATION_MODEL,
@@ -103,6 +105,15 @@ async def caption_image(image: UploadFile = File(...)):
         raise HTTPException(
             status_code=415,
             detail="Unsupported image type. Please upload JPG, PNG, or WebP.",
+        )
+
+    # Render's free 512 MB instance cannot load BLIP safely. When this flag is
+    # enabled, the frontend immediately switches to quantized browser inference
+    # instead of letting the server process get killed by the OOM limiter.
+    if BROWSER_INFERENCE_ONLY:
+        raise HTTPException(
+            status_code=503,
+            detail="Browser inference required on this deployment.",
         )
 
     image_bytes = await image.read()
@@ -138,4 +149,5 @@ async def caption_image(image: UploadFile = File(...)):
             "captioning": CAPTION_MODEL,
             "translation": TRANSLATION_MODEL,
         },
+        "inference": "server",
     }
