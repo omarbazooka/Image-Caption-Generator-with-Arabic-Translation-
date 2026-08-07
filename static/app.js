@@ -16,9 +16,15 @@ const copyButtons = document.querySelectorAll(".copy-button");
 
 const MAX_FILE_SIZE = 8 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const TRANSFORMERS_CDN = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0";
+const BROWSER_CAPTION_MODEL = "Xenova/vit-gpt2-image-captioning";
+const BROWSER_TRANSLATION_MODEL = "Xenova/opus-mt-en-ar";
 
 let selectedFile = null;
 let previewUrl = null;
+let transformersPromise = null;
+let browserCaptionerPromise = null;
+let browserTranslatorPromise = null;
 
 function setStatus(message = "", type = "") {
   statusMessage.textContent = message;
@@ -90,15 +96,128 @@ function resetSelection() {
   }
 }
 
-function setLoading(isLoading) {
+function setLoading(isLoading, message = "") {
   generateButton.disabled = isLoading || !selectedFile;
   buttonText.textContent = isLoading ? "Generating caption..." : "Generate caption";
   spinner.classList.toggle("hidden", !isLoading);
 
   if (isLoading) {
     setResultState("Running AI models", "loading");
-    setStatus("Analyzing the image with BLIP, then translating the caption with MarianMT...");
+    setStatus(message || "Analyzing the image and generating the bilingual result...");
   }
+}
+
+function showResults(english, arabic, sourceLabel) {
+  englishResult.textContent = english;
+  arabicResult.textContent = arabic;
+  englishResult.classList.remove("placeholder");
+  arabicResult.classList.remove("placeholder");
+  copyButtons.forEach((button) => {
+    button.disabled = false;
+  });
+
+  setResultState("Caption ready", "ready");
+  setStatus(`Caption generated successfully${sourceLabel ? ` · ${sourceLabel}` : ""}.`);
+}
+
+async function getServerInferenceMode() {
+  try {
+    const response = await fetch("/api/health", { cache: "no-store" });
+    if (!response.ok) {
+      return "server";
+    }
+    const payload = await response.json();
+    return payload.inference_mode || "server";
+  } catch {
+    return "browser";
+  }
+}
+
+async function getTransformers() {
+  if (!transformersPromise) {
+    transformersPromise = import(TRANSFORMERS_CDN);
+  }
+  return transformersPromise;
+}
+
+async function getBrowserCaptioner() {
+  if (!browserCaptionerPromise) {
+    browserCaptionerPromise = (async () => {
+      const { pipeline } = await getTransformers();
+      setStatus("Free hosting mode: downloading the quantized image-caption model to your browser. The first run can take a while...");
+      return pipeline("image-to-text", BROWSER_CAPTION_MODEL, {
+        dtype: "q8",
+        device: "wasm",
+      });
+    })();
+  }
+  return browserCaptionerPromise;
+}
+
+async function getBrowserTranslator() {
+  if (!browserTranslatorPromise) {
+    browserTranslatorPromise = (async () => {
+      const { pipeline } = await getTransformers();
+      setStatus("Image caption ready. Loading the Arabic translation model in your browser...");
+      return pipeline("translation", BROWSER_TRANSLATION_MODEL, {
+        dtype: "q8",
+        device: "wasm",
+      });
+    })();
+  }
+  return browserTranslatorPromise;
+}
+
+async function runBrowserInference() {
+  if (!previewUrl) {
+    throw new Error("The selected image preview is unavailable. Please choose the image again.");
+  }
+
+  const captioner = await getBrowserCaptioner();
+  setStatus("Running image captioning locally in your browser...");
+  const captionOutput = await captioner(previewUrl, { max_new_tokens: 40 });
+  const englishCaption = captionOutput?.[0]?.generated_text?.trim();
+
+  if (!englishCaption) {
+    throw new Error("The browser caption model did not return a caption.");
+  }
+
+  const translator = await getBrowserTranslator();
+  setStatus("Translating the generated caption to Arabic locally in your browser...");
+  const translationOutput = await translator(englishCaption, { max_new_tokens: 80 });
+  const arabicCaption = (
+    translationOutput?.[0]?.translation_text ||
+    translationOutput?.[0]?.generated_text ||
+    ""
+  ).trim();
+
+  if (!arabicCaption) {
+    throw new Error("The browser translation model did not return an Arabic translation.");
+  }
+
+  return {
+    english_caption: englishCaption,
+    arabic_caption: arabicCaption,
+  };
+}
+
+async function runServerInference() {
+  const formData = new FormData();
+  formData.append("image", selectedFile);
+
+  const response = await fetch("/api/caption", {
+    method: "POST",
+    body: formData,
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const error = new Error(payload.detail || "The image could not be processed.");
+    error.status = response.status;
+    throw error;
+  }
+
+  return payload;
 }
 
 async function generateCaption() {
@@ -106,36 +225,37 @@ async function generateCaption() {
     return;
   }
 
-  const formData = new FormData();
-  formData.append("image", selectedFile);
-
-  setLoading(true);
+  setLoading(true, "Checking the available inference engine...");
 
   try {
-    const response = await fetch("/api/caption", {
-      method: "POST",
-      body: formData,
-    });
+    const inferenceMode = await getServerInferenceMode();
 
-    const payload = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(payload.detail || "The image could not be processed.");
+    if (inferenceMode === "browser") {
+      const payload = await runBrowserInference();
+      showResults(payload.english_caption, payload.arabic_caption, "browser AI fallback");
+      return;
     }
 
-    englishResult.textContent = payload.english_caption;
-    arabicResult.textContent = payload.arabic_caption;
-    englishResult.classList.remove("placeholder");
-    arabicResult.classList.remove("placeholder");
-    copyButtons.forEach((button) => {
-      button.disabled = false;
-    });
+    try {
+      setStatus("Analyzing the image with the original BLIP + MarianMT backend...");
+      const payload = await runServerInference();
+      showResults(payload.english_caption, payload.arabic_caption, "BLIP + MarianMT backend");
+    } catch (serverError) {
+      if (serverError.status && serverError.status < 500) {
+        throw serverError;
+      }
 
-    setResultState("Caption ready", "ready");
-    setStatus("Caption and Arabic translation generated successfully.");
+      setStatus("The server AI is unavailable on this low-memory instance. Switching to local browser inference...");
+      const payload = await runBrowserInference();
+      showResults(payload.english_caption, payload.arabic_caption, "browser AI fallback");
+    }
   } catch (error) {
     setResultState("Generation failed", "error");
-    setStatus(error.message || "Something went wrong. Please try again.", "error");
+    setStatus(
+      error.message ||
+        "Browser inference could not start. Check your connection and try again in a modern desktop browser.",
+      "error",
+    );
   } finally {
     setLoading(false);
   }
