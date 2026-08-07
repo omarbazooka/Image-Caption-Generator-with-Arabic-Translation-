@@ -169,13 +169,15 @@ async function getBrowserTranslator() {
 }
 
 async function runBrowserInference() {
-  if (!previewUrl) {
-    throw new Error("The selected image preview is unavailable. Please choose the image again.");
+  if (!selectedFile) {
+    throw new Error("The selected image is unavailable. Please choose the image again.");
   }
 
+  const { RawImage } = await getTransformers();
+  const browserImage = await RawImage.fromBlob(selectedFile);
   const captioner = await getBrowserCaptioner();
   setStatus("Running image captioning locally in your browser...");
-  const captionOutput = await captioner(previewUrl, { max_new_tokens: 40 });
+  const captionOutput = await captioner(browserImage, { max_new_tokens: 40 });
   const englishCaption = captionOutput?.[0]?.generated_text?.trim();
 
   if (!englishCaption) {
