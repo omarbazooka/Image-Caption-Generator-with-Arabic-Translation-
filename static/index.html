@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Generate an English image caption with BLIP and translate it to Arabic with MarianMT." />
+  <meta name="description" content="Generate an English image caption and translate it to Arabic with an AI-powered bilingual demo." />
   <title>CaptionBridge AI | Image Caption Generator</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
@@ -29,16 +29,16 @@
           <span class="eyebrow">Computer Vision × NLP</span>
           <h1>Turn any image into a <span>bilingual description.</span></h1>
           <p class="hero-text">
-            Upload an image, generate an English caption with BLIP, then translate it into Arabic using MarianMT.
+            Upload an image, generate an English caption, then translate it into Arabic using an end-to-end AI pipeline.
           </p>
           <div class="hero-actions">
             <a class="button primary" href="#demo">Try the demo</a>
             <a class="button ghost" href="#workflow">See the pipeline</a>
           </div>
-          <div class="model-row" aria-label="Models used">
-            <div><small>Captioning</small><strong>BLIP</strong></div>
+          <div class="model-row" aria-label="Core project models">
+            <div><small>Core captioning model</small><strong>BLIP</strong></div>
             <span class="model-arrow">→</span>
-            <div><small>Translation</small><strong>MarianMT</strong></div>
+            <div><small>Core translation model</small><strong>MarianMT</strong></div>
           </div>
         </div>
 
@@ -65,7 +65,7 @@
         <div class="section-heading">
           <span class="eyebrow">Live inference</span>
           <h2>Upload an image</h2>
-          <p>The first request can take longer while the pretrained models are downloaded and loaded into memory.</p>
+          <p>On free hosting, the first run downloads quantized AI models to your browser, so it can take longer than later requests.</p>
         </div>
 
         <div class="demo-grid">
@@ -121,7 +121,7 @@
 
             <div class="model-note">
               <span class="note-dot"></span>
-              <p><strong>Real model inference:</strong> results come directly from BLIP and MarianMT running on the Python backend.</p>
+              <p><strong>Adaptive live demo:</strong> the core project keeps BLIP + MarianMT on the Python backend. On low-memory free hosting, the demo automatically falls back to quantized Transformers.js models running locally in the visitor's browser.</p>
             </div>
           </section>
         </div>
@@ -132,8 +132,8 @@
       <div class="container">
         <div class="section-heading centered">
           <span class="eyebrow">Project pipeline</span>
-          <h2>Two AI models, one simple flow</h2>
-          <p>The interface stays lightweight while the original machine-learning pipeline remains unchanged.</p>
+          <h2>Two AI stages, one simple flow</h2>
+          <p>The original project pipeline remains BLIP captioning followed by MarianMT Arabic translation.</p>
         </div>
 
         <div class="workflow-grid">
@@ -141,13 +141,13 @@
             <span class="step-number">01</span>
             <div class="step-icon">IMG</div>
             <h3>Image input</h3>
-            <p>The uploaded image is validated and converted to RGB before inference.</p>
+            <p>The uploaded image is validated and prepared for inference.</p>
           </article>
           <article class="workflow-card">
             <span class="step-number">02</span>
             <div class="step-icon">BLIP</div>
             <h3>Caption generation</h3>
-            <p>Salesforce BLIP analyzes the visual content and generates an English caption.</p>
+            <p>The core backend uses Salesforce BLIP to generate an English caption.</p>
           </article>
           <article class="workflow-card">
             <span class="step-number">03</span>
@@ -159,7 +159,7 @@
             <span class="step-number">04</span>
             <div class="step-icon">UI</div>
             <h3>Bilingual result</h3>
-            <p>The frontend displays both captions side by side in a presentation-friendly layout.</p>
+            <p>The frontend displays both captions in a presentation-friendly layout.</p>
           </article>
         </div>
       </div>
